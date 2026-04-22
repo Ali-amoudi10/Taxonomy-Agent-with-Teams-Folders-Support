@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+  <title>PPTX Slide Finder</title>
+  <link rel="stylesheet" href="/static/styles.css?v={{ asset_version }}" />
+</head>
+<body>
+  <div class="page-bg" aria-hidden="true"></div>
+
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="topbar-copy">
+        <h1>PPTX Slide Finder</h1>
+        <p class="sub">
+          Search slides semantically, review suggested matches, and build an export deck.
+        </p>
+      </div>
+      <div class="topbar-actions">
+        <div id="msAuthArea" class="ms-auth-area hidden">
+          <span id="msAuthLabel" class="ms-auth-label muted small">Microsoft: Connected</span>
+          <button id="signOutBtn" class="btn btn-ghost" type="button">Sign out</button>
+        </div>
+        <button id="openSettingsBtn" class="btn btn-ghost" type="button">Settings</button>
+      </div>
+    </header>
+
+    <section class="card dir-card">
+      <div class="dir-row">
+        <label for="dirInput">Directory</label>
+
+        <div class="dir-input-wrap">
+          <input
+            id="dirInput"
+            type="text"
+            placeholder="Local folder path or Teams folder link (https://…sharepoint.com/…)"
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="dir-actions">
+          <button
+            id="browseBtn"
+            class="btn btn-secondary"
+            type="button"
+            title="Opens a native folder picker and sets the directory automatically"
+          >
+            Browse
+          </button>
+        </div>
+      </div>
+
+      <div id="dirStatus" class="muted dir-status">No directory selected.</div>
+    </section>
+
+    <div class="main-grid-wrap">
+      <main class="main-grid">
+        <section class="card panel chat-panel">
+          <div class="panel-head">
+            <div class="panel-head-copy">
+              <h2>Chat</h2>
+              <div class="muted small">Ask for a topic, use case, or concept.</div>
+            </div>
+          </div>
+
+          <div id="chatLog" class="chatlog"></div>
+
+          <div class="composer">
+            <div class="composer-input-wrap">
+              <input
+                id="chatInput"
+                type="text"
+                placeholder="Try: show me slides about finance forecasting in healthcare"
+                autocomplete="off"
+              />
+            </div>
+            <button id="sendBtn" class="btn btn-primary composer-btn" type="button">
+              Send
+            </button>
+          </div>
+
+          <div id="indexingWrap" class="indexing-wrap hidden" aria-live="polite">
+            <div class="indexing-head">
+              <span id="indexingLabel" class="indexing-label">Indexing directory…</span>
+              <span id="indexingPercent" class="muted small">0%</span>
+            </div>
+            <div class="progress-track">
+              <div id="indexingBar" class="progress-bar"></div>
+            </div>
+            <div id="indexingDetails" class="muted small indexing-details">Preparing indexing…</div>
+          </div>
+        </section>
+
+        <section class="card panel results-panel">
+          <div class="panel-head">
+            <div class="panel-head-copy">
+              <h2>Suggested Slides</h2>
+              <div id="resultCount" class="muted small">0 results</div>
+            </div>
+            <button id="clearResultsBtn" class="btn btn-ghost" type="button">Clear</button>
+          </div>
+
+          <div id="resultsList" class="result-list">
+            <div class="empty-state">
+              Run a search from the chat and the suggested slides will appear here.
+            </div>
+          </div>
+        </section>
+
+        <section class="card panel builder-panel">
+          <div class="panel-head">
+            <div class="panel-head-copy">
+              <h2>Deck Builder</h2>
+              <div id="selectedCount" class="muted small">0 selected</div>
+            </div>
+
+            <div class="panel-actions">
+              <button id="clearDeckBtn" class="btn btn-ghost" type="button">Clear</button>
+              <button id="exportDeckBtn" class="btn btn-primary" type="button">
+                Export PPTX
+              </button>
+            </div>
+          </div>
+
+          <div id="selectedList" class="selected-list">
+            <div class="empty-state">
+              Add slides from the middle panel to build an export deck.
+            </div>
+          </div>
+
+          <div id="exportStatus" class="muted small export-status"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="settingsModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card card">
+      <div class="modal-head">
+        <div>
+          <h2>Settings</h2>
+          <div class="muted small">Configure export and indexing behaviour.</div>
+        </div>
+        <button id="closeSettingsBtn" class="btn btn-ghost" type="button">Close</button>
+      </div>
+
+      <div class="settings-form">
+
+        <div class="settings-section-title">Export</div>
+
+        <label class="radio-option">
+          <input type="radio" name="exportMode" value="ask" checked />
+          <div>
+            <div class="radio-title">Always ask before saving</div>
+            <div class="muted small">A folder picker opens every time you export a deck.</div>
+          </div>
+        </label>
+
+        <label class="radio-option">
+          <input type="radio" name="exportMode" value="fixed" />
+          <div>
+            <div class="radio-title">Always save to a predefined directory</div>
+            <div class="muted small">Choose one export folder once and reuse it for future exports.</div>
+          </div>
+        </label>
+
+        <div id="fixedDirSection" class="settings-fieldset hidden">
+          <label for="exportDirectoryInput" class="settings-label">Export directory</label>
+          <div class="settings-dir-row">
+            <input id="exportDirectoryInput" type="text" autocomplete="off" placeholder="Choose an export directory" />
+            <button id="browseExportDirBtn" class="btn btn-secondary" type="button">Browse</button>
+          </div>
+          <div id="settingsError" class="settings-error muted small"></div>
+        </div>
+
+        <hr class="settings-divider" />
+
+        <div class="settings-section-title">Teams Folder Indexing</div>
+
+        <label class="radio-option">
+          <input type="radio" name="teamsIndexingMode" value="download" checked />
+          <div>
+            <div class="radio-title">Download &amp; index (recommended)</div>
+            <div class="muted small">Downloads each file to a temporary location, extracts text, then deletes it immediately. Only one file occupies disk at a time. Works without PowerPoint.</div>
+          </div>
+        </label>
+
+        <label class="radio-option">
+          <input type="radio" name="teamsIndexingMode" value="com" />
+          <div>
+            <div class="radio-title">Open in PowerPoint — no download</div>
+            <div class="muted small">Opens each file directly in the desktop PowerPoint app via COM automation. No files are written to disk. Requires Microsoft PowerPoint to be installed and signed in to Microsoft 365.</div>
+          </div>
+        </label>
+
+        <hr class="settings-divider" />
+
+        <div class="settings-danger-zone">
+          <div>
+            <div class="settings-section-title">Database</div>
+            <div class="muted small" style="margin-top:4px">Reset removes all indexed data for every folder — local and Teams. You will need to re-index before searching again.</div>
+          </div>
+          <button id="resetDatabaseBtn" class="btn btn-danger" type="button">Reset database</button>
+        </div>
+
+      </div>
+
+      <div class="modal-actions">
+        <button id="saveSettingsBtn" class="btn btn-primary" type="button">Save preferences</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Microsoft sign-in modal (device code flow) -->
+  <div id="signInModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card card">
+      <div class="modal-head">
+        <div>
+          <h2>Sign in to Microsoft</h2>
+          <div class="muted small">Required to access Teams and SharePoint folders.</div>
+        </div>
+        <button id="closeSignInBtn" class="btn btn-ghost" type="button">Cancel</button>
+      </div>
+
+      <div id="signInBody">
+        <!-- populated by JS -->
+        <div class="signin-loading muted small">Starting sign-in…</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v={{ asset_version }}"></script>
+</body>
+</html>

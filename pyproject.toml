@@ -1,0 +1,36 @@
+[project]
+name = "pptx-slide-finder"
+version = "0.1.0"
+description = "Find relevant PPTX files for a slide topic using a LangGraph workflow."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.110",
+  "uvicorn>=0.27",
+  "jinja2>=3.1",
+  "langgraph>=0.2.0",
+  "langchain-core>=0.3.0",
+  "langchain-openai>=0.2.0",
+  "python-pptx>=1.0.0",
+  "dotenv",
+  "chromadb",
+  "pywin32"
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+# ---- IMPORTANT PART (fixes your error) ----
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*", "core*"]
+exclude = ["data*", "tests*", "scripts*"]
+
+# Optional but recommended if you later do a real install (non-editable)
+# and want HTML/CSS/JS packaged too:
+[tool.setuptools.package-data]
+"app.ui" = ["templates/*.html", "static/*.css", "static/*.js"]

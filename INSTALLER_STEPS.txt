@@ -1,0 +1,46 @@
+Taxonomy Agent - Installer build and usage
+=========================================
+
+A) Build the installer on your own Windows machine
+--------------------------------------------------
+1. Unzip this project.
+2. Make sure the project works locally first if possible.
+3. Install Inno Setup 6 on the machine that will build the installer.
+4. Open Command Prompt inside the project root.
+5. Run:
+      build_windows_installer.bat
+6. Wait for the build to finish.
+7. The installer should be created here:
+      installer\output\TaxonomyAgentSetup.exe
+
+B) Install on another Windows machine
+-------------------------------------
+1. Copy TaxonomyAgentSetup.exe to the target machine.
+2. Double-click the installer.
+3. Follow the installation wizard.
+4. A desktop icon named "Taxonomy Agent" will be created.
+5. Double-click the icon to start the app.
+6. The launcher will start the local server and open the browser automatically.
+
+C) If the installed app does not start
+--------------------------------------
+1. If startup fails, the launcher should show a popup error dialog.
+2. It also writes the full startup error log to:
+      %LOCALAPPDATA%\TaxonomyAgent\logs\startup_error.log
+3. Open that log file and inspect the traceback.
+4. Common causes are:
+   - missing PowerPoint on the target machine
+   - missing Microsoft Visual C++ runtime needed by some wheels
+   - blocked local port or antivirus restriction
+   - missing Azure/OpenAI environment variables if your workflow needs them
+
+D) Quick local run without building installer
+---------------------------------------------
+1. Double-click:
+      run_taxonomy_agent.bat
+2. This creates a local .venv if needed and launches the browser app.
+
+
+First launch behavior:
+- If Azure configuration is missing, the app will prompt for it before starting.
+- The saved config is stored in %LOCALAPPDATA%\TaxonomyAgent\.env

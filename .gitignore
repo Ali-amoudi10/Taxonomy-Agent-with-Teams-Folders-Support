@@ -1,0 +1,23 @@
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# venv
+.venv/
+venv/
+.venv-build/
+venv-build/
+
+# local data
+data/cache/*
+data/temp/*
+!.gitkeep
+
+# misc
+.DS_Store
+.env
