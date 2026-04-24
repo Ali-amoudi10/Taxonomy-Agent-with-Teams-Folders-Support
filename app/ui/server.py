@@ -141,6 +141,38 @@ def _choose_directory_dialog(initial_dir: str = "") -> str:
     return str(path or "")
 
 
+def _choose_file_dialog(initial_dir: str = "") -> str:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    root.update()
+
+    try:
+        root.lift()
+        root.focus_force()
+    except Exception:
+        pass
+
+    options: dict[str, Any] = {
+        "parent": root,
+        "filetypes": [("PowerPoint presentation", "*.pptx"), ("All files", "*.*")],
+    }
+    if initial_dir and os.path.isdir(initial_dir):
+        options["initialdir"] = initial_dir
+
+    path = filedialog.askopenfilename(**options)
+
+    try:
+        root.attributes("-topmost", False)
+    except Exception:
+        pass
+    root.destroy()
+    return str(path or "")
+
+
 def _choose_save_pptx_path_dialog(initial_dir: str = "", initial_filename: str = "") -> str:
     import tkinter as tk
     from tkinter import filedialog
@@ -228,7 +260,7 @@ def _start_indexing(directory: str) -> dict[str, Any]:
                 "total": 0,
                 "percent": 0,
                 "current_file": "",
-                "message": "Preparing indexing...",
+                "message": "Getting ready…",
                 "stats": {},
                 "error": None,
             }
@@ -294,6 +326,86 @@ def _start_indexing(directory: str) -> dict[str, Any]:
     return _snapshot_index_state()
 
 
+def _start_indexing_file(file_path: str) -> dict[str, Any]:
+    from app.rag_kb.indexer import index_file
+    resolved = str(Path(file_path).expanduser().resolve())
+    filename = Path(resolved).name
+    with _INDEX_LOCK:
+        INDEX_STATE["run_id"] = int(INDEX_STATE.get("run_id", 0)) + 1
+        run_id = INDEX_STATE["run_id"]
+        INDEX_STATE.update(
+            {
+                "status": "indexing",
+                "directory": resolved,
+                "current": 0,
+                "total": 1,
+                "percent": 0,
+                "current_file": resolved,
+                "message": f"Reading {filename}…",
+                "stats": {},
+                "error": None,
+            }
+        )
+
+    logger.info("[INDEX] single file started for %s", resolved)
+
+    def progress_callback(payload: dict[str, Any]) -> None:
+        with _INDEX_LOCK:
+            if INDEX_STATE.get("run_id") != run_id:
+                return
+            INDEX_STATE.update(
+                {
+                    "status": payload.get("status", INDEX_STATE.get("status", "indexing")),
+                    "directory": resolved,
+                    "current": int(payload.get("current", INDEX_STATE.get("current", 0)) or 0),
+                    "total": int(payload.get("total", INDEX_STATE.get("total", 1)) or 1),
+                    "percent": int(payload.get("percent", INDEX_STATE.get("percent", 0)) or 0),
+                    "current_file": payload.get("current_file", INDEX_STATE.get("current_file", "")) or "",
+                    "message": payload.get("message", INDEX_STATE.get("message", "")) or "",
+                    "stats": dict(payload.get("stats") or INDEX_STATE.get("stats") or {}),
+                    "error": payload.get("error"),
+                }
+            )
+
+    def worker() -> None:
+        try:
+            result = index_file(resolved, KBConfig(), progress_callback=progress_callback)
+            logger.info("[INDEX] file indexed %s stats=%s", resolved, result.get("stats") or {})
+            with _INDEX_LOCK:
+                if INDEX_STATE.get("run_id") != run_id:
+                    return
+                INDEX_STATE.update(
+                    {
+                        "status": "completed",
+                        "directory": resolved,
+                        "current": 1,
+                        "total": 1,
+                        "percent": 100,
+                        "current_file": "",
+                        "message": "Done!",
+                        "stats": dict(result.get("stats") or {}),
+                        "error": None,
+                    }
+                )
+        except Exception as exc:
+            logger.exception("[INDEX] file indexing failed for %s", resolved)
+            with _INDEX_LOCK:
+                if INDEX_STATE.get("run_id") != run_id:
+                    return
+                INDEX_STATE.update(
+                    {
+                        "status": "error",
+                        "directory": resolved,
+                        "message": "Something went wrong.",
+                        "error": str(exc),
+                    }
+                )
+
+    thread = threading.Thread(target=worker, daemon=True, name="pptx-file-indexer")
+    thread.start()
+    return _snapshot_index_state()
+
+
 def _same_source(a: str, b: str) -> bool:
     """Compare two source identifiers regardless of whether they are local paths or source keys."""
     if not a or not b:
@@ -319,7 +431,7 @@ def _start_indexing_teams(source: SourceDescriptor, sp_client: Any, mode: str = 
                 "total": 0,
                 "percent": 0,
                 "current_file": "",
-                "message": "Preparing Teams folder indexing...",
+                "message": "Connecting to your Teams folder…",
                 "stats": {},
                 "error": None,
             }
@@ -459,14 +571,28 @@ def _build_search_text(results: list[dict[str, Any]], error: str | None = None) 
     if not results:
         return "No matching slides found."
 
+    _SCORE_MIN = settings.search_min_score
+    _SCORE_MAX = settings.score_display_max
+
+    scores = [float(r.get("score", 0.0)) for r in results]
+    if scores:
+        logger.info(
+            "[SCORE_RANGE] n=%d min=%.3f max=%.3f mean=%.3f  "
+            "(adjust SCORE_MAX in server.py + app.js if max regularly exceeds 0.60)",
+            len(scores), min(scores), max(scores),
+            sum(scores) / len(scores),
+        )
+
+    def _pct(s: float) -> int:
+        return max(1, min(99, round((s - _SCORE_MIN) / (_SCORE_MAX - _SCORE_MIN) * 100)))
+
     lines = [f"I found {len(results)} matching slide(s)."]
     for item in results[:8]:
         deck = item.get("deck_title") or Path(item.get("path", "")).stem or "Untitled deck"
         slide_number = item.get("slide_number")
-        score = item.get("score", 0.0)
-        # snippet = item.get("snippet") or item.get("reason") or ""
+        score = float(item.get("score", 0.0))
         slide_label = f"Slide {slide_number}" if slide_number else "Slide ?"
-        lines.append(f"- {deck} — {slide_label} — score {score:.3f}")
+        lines.append(f"- {deck} — {slide_label} — {_pct(score)}% match")
     return "\n".join(lines)
 
 
@@ -646,7 +772,10 @@ def home(request: Request):
     return templates.TemplateResponse(
         request=request,
         name="index.html",
-        context={"asset_version": asset_version},
+        context={
+            "asset_version": asset_version,
+            "score_display_max": settings.score_display_max,
+        },
     )
 
 
@@ -853,9 +982,20 @@ async def set_dir(payload: dict):
             "indexing": indexing,
         }
 
+    # --- Local PPTX file ---
+    if os.path.isfile(directory) and directory.lower().endswith(".pptx"):
+        resolved_file = str(Path(directory).expanduser().resolve())
+        SESSION["directory"] = resolved_file
+        SESSION["last_results"] = []
+        indexing = _start_indexing_file(resolved_file)
+        return {"ok": True, "directory": resolved_file, "indexing": indexing}
+
     # --- Local directory ---
     if not os.path.isdir(directory):
-        return JSONResponse({"ok": False, "error": "Directory does not exist."}, status_code=400)
+        return JSONResponse(
+            {"ok": False, "error": "Please enter a valid folder path, a PowerPoint (.pptx) file, or a Teams link."},
+            status_code=400,
+        )
 
     SESSION["directory"] = directory
     SESSION["last_results"] = []
@@ -881,6 +1021,30 @@ async def browse_dir():
     except Exception as e:
         logger.exception("[DIRECTORY] browse failed")
         return {"ok": False, "error": f"Browse not available: {e}"}
+
+
+@app.get("/api/browse_file")
+async def browse_file():
+    try:
+        current = str(SESSION.get("directory", "") or "")
+        initial_dir = str(Path(current).parent) if os.path.isfile(current) else current
+        path = _choose_file_dialog(initial_dir=initial_dir)
+        if not path:
+            return {"ok": False, "error": "No file selected."}
+        if not os.path.isfile(path):
+            return {"ok": False, "error": "Selected path is not a file."}
+        if not path.lower().endswith(".pptx"):
+            return {"ok": False, "error": "Please select a PowerPoint (.pptx) file."}
+
+        resolved = str(Path(path).expanduser().resolve())
+        logger.info("[DIRECTORY] file browse selected %s", resolved)
+        SESSION["directory"] = resolved
+        SESSION["last_results"] = []
+        indexing = _start_indexing_file(resolved)
+        return {"ok": True, "directory": resolved, "indexing": indexing}
+    except Exception as e:
+        logger.exception("[DIRECTORY] file browse failed")
+        return {"ok": False, "error": f"File browse not available: {e}"}
 
 
 @app.get("/api/choose_directory")
@@ -923,10 +1087,14 @@ async def update_preferences(payload: dict):
     raw_teams_mode = str(payload.get("teams_indexing_mode", "download") or "download").strip().lower()
     teams_indexing_mode = raw_teams_mode if raw_teams_mode in {"download", "com"} else "download"
 
+    raw_new_deck_mode = str(payload.get("new_deck_mode", "ask") or "ask").strip().lower()
+    new_deck_mode = raw_new_deck_mode if raw_new_deck_mode in {"ask", "auto", "never"} else "ask"
+
     prefs = save_preferences({
         "export_mode": export_mode,
         "export_directory": export_directory,
         "teams_indexing_mode": teams_indexing_mode,
+        "new_deck_mode": new_deck_mode,
     })
     logger.info("[PREFERENCES] saved %s", prefs)
     return {"ok": True, "preferences": prefs}
@@ -961,7 +1129,7 @@ async def reset_database():
         SESSION["directory"] = ""
         SESSION["last_results"] = []
         SESSION["messages"] = []
-        _set_idle_index_state(message="Database reset. Select a folder to start indexing.")
+        _set_idle_index_state(message="All data cleared. Select a folder or file to get started.")
         logger.info("[DB] database reset by user")
         return {"ok": True}
     except Exception as e:

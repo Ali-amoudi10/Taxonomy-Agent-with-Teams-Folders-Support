@@ -4,6 +4,8 @@ const sendBtn = document.getElementById("sendBtn");
 
 const dirInput = document.getElementById("dirInput");
 const browseBtn = document.getElementById("browseBtn");
+const browseFileBtn = document.getElementById("browseFileBtn");
+const setDirBtn = document.getElementById("setDirBtn");
 const dirStatus = document.getElementById("dirStatus");
 
 const indexingWrap = document.getElementById("indexingWrap");
@@ -21,6 +23,11 @@ const selectedCount = document.getElementById("selectedCount");
 const clearDeckBtn = document.getElementById("clearDeckBtn");
 const exportDeckBtn = document.getElementById("exportDeckBtn");
 const exportStatus = document.getElementById("exportStatus");
+const newDeckModal = document.getElementById("newDeckModal");
+const newDeckModalSub = document.getElementById("newDeckModalSub");
+const newDeckModalMsg = document.getElementById("newDeckModalMsg");
+const newDeckYesBtn = document.getElementById("newDeckYesBtn");
+const newDeckNoBtn = document.getElementById("newDeckNoBtn");
 
 const openSettingsBtn = document.getElementById("openSettingsBtn");
 const closeSettingsBtn = document.getElementById("closeSettingsBtn");
@@ -39,10 +46,18 @@ const saveSettingsBtn = document.getElementById("saveSettingsBtn");
 const settingsError = document.getElementById("settingsError");
 const exportModeInputs = Array.from(document.querySelectorAll('input[name="exportMode"]'));
 const teamsIndexingModeInputs = Array.from(document.querySelectorAll('input[name="teamsIndexingMode"]'));
+const newDeckModeInputs = Array.from(document.querySelectorAll('input[name="newDeckMode"]'));
 const resetDatabaseBtn = document.getElementById("resetDatabaseBtn");
 
 function safeOn(el, eventName, handler) {
   if (el) el.addEventListener(eventName, handler);
+}
+
+function updateSetBtnState() {
+  if (!setDirBtn) return;
+  const current = (dirInput ? dirInput.value : "").trim();
+  const applied = (state.lastAppliedInput || "").trim();
+  setDirBtn.disabled = !current || current === applied;
 }
 
 const state = {
@@ -53,21 +68,32 @@ const state = {
   signInResolve: null,
   signInReject: null,
   pendingTeamsUrl: "",
+  pendingNewDeckPath: "",
   preferences: {
     export_mode: "ask",
     export_directory: "",
+    teams_indexing_mode: "download",
+    new_deck_mode: "ask",
   },
   lastAppliedDirectory: "",
+  lastAppliedInput: "",
 };
 
 function itemKey(item) {
   return [item.path || "", item.slide_number ?? "", item.reason || ""].join("::");
 }
 
-function formatScore(score) {
+function matchPct(score) {
+  // Linear rescale: [SCORE_MIN, SCORE_MAX] → [1%, 99%]
+  // SCORE_MIN = search_min_score from settings (retrieval filter — no result below this appears)
+  // SCORE_MAX = SCORE_DISPLAY_MAX injected from server via window.SCORE_DISPLAY_MAX
+  //             (set SCORE_DISPLAY_MAX in .env to tune; lower = higher displayed percentages)
+  const SCORE_MIN = 0.25;
+  const SCORE_MAX = (typeof window.SCORE_DISPLAY_MAX === "number") ? window.SCORE_DISPLAY_MAX : 0.50;
   const n = Number(score);
-  if (Number.isFinite(n)) return n.toFixed(3);
-  return "-";
+  if (!Number.isFinite(n)) return "—";
+  const raw = (n - SCORE_MIN) / (SCORE_MAX - SCORE_MIN) * 100;
+  return Math.max(1, Math.min(99, Math.round(raw))) + "%";
 }
 
 function basename(path) {
@@ -168,7 +194,7 @@ function renderResults() {
   resultsList.innerHTML = "";
 
   if (!state.results.length) {
-    setEmptyState(resultsList, "Run a search from the chat and the suggested slides will appear here.");
+    setEmptyState(resultsList, "Describe what you're looking for in the chat — matching slides will appear here.");
     return;
   }
 
@@ -197,7 +223,7 @@ function renderResults() {
 
     const score = document.createElement("div");
     score.className = "score-pill";
-    score.textContent = `Score ${formatScore(item.score)}`;
+    score.textContent = `${matchPct(item.score)} match`;
 
     top.appendChild(titleWrap);
     top.appendChild(score);
@@ -235,7 +261,7 @@ function renderSelected() {
   selectedList.innerHTML = "";
 
   if (!state.selected.length) {
-    setEmptyState(selectedList, "Add slides from the middle panel to build an export deck.");
+    setEmptyState(selectedList, "Click Add on any suggested slide to include it in your presentation.");
     return;
   }
 
@@ -318,13 +344,17 @@ function updateIndexingUI(indexing) {
   indexingWrap.classList.remove("hidden");
 
   if (status === "indexing" || status === "running") {
-    indexingLabel.textContent = "Indexing directory…";
+    indexingLabel.textContent = "Reading your presentations…";
     const total = Number(data.total || 0);
     const current = Number(data.current || 0);
-    const fileInfo = data.current_file ? basename(data.current_file) : "Preparing files…";
-    indexingDetails.textContent = total > 0
-      ? `${data.message || "Indexing..."} — ${current}/${total} files — ${fileInfo}`
-      : (data.message || "Preparing indexing...");
+    const fileInfo = data.current_file ? basename(data.current_file) : "";
+    if (total > 0 && fileInfo) {
+      indexingDetails.textContent = `Reading file ${current} of ${total}: ${fileInfo}`;
+    } else if (total > 0) {
+      indexingDetails.textContent = `Reading file ${current} of ${total}…`;
+    } else {
+      indexingDetails.textContent = data.message || "Getting ready…";
+    }
     sendBtn.disabled = true;
     return;
   }
@@ -332,15 +362,22 @@ function updateIndexingUI(indexing) {
   sendBtn.disabled = false;
 
   if (status === "completed") {
-    indexingLabel.textContent = "Indexing complete";
+    indexingLabel.textContent = "Your slides are ready!";
     const stats = data.stats || {};
-    indexingDetails.textContent = `Indexed ${stats.indexed_files || 0} file(s), ${stats.indexed_slides || 0} slide(s), skipped ${stats.skipped_files || 0}, removed ${stats.deleted_files || 0}.`;
+    const files = stats.indexed_files || 0;
+    const slides = stats.indexed_slides || 0;
+    const skipped = stats.skipped_files || 0;
+    const removed = stats.deleted_files || 0;
+    let detail = `Found ${files} presentation${files !== 1 ? "s" : ""} with ${slides} slide${slides !== 1 ? "s" : ""}.`;
+    if (skipped > 0) detail += ` (${skipped} unchanged, skipped)`;
+    if (removed > 0) detail += ` Removed ${removed} old file${removed !== 1 ? "s" : ""}.`;
+    indexingDetails.textContent = detail;
     return;
   }
 
   if (status === "error") {
-    indexingLabel.textContent = "Indexing failed";
-    indexingDetails.textContent = data.error || data.message || "Unknown indexing error.";
+    indexingLabel.textContent = "Something went wrong";
+    indexingDetails.textContent = data.error || data.message || "Please try again.";
   }
 }
 
@@ -366,10 +403,22 @@ function startIndexPolling(initialState) {
   }
 }
 
+function setExportStatus(text, loading = false) {
+  exportStatus.innerHTML = "";
+  if (loading) {
+    const spinner = document.createElement("span");
+    spinner.className = "export-spinner";
+    exportStatus.appendChild(spinner);
+  }
+  const label = document.createElement("span");
+  label.textContent = text;
+  exportStatus.appendChild(label);
+}
+
 function resetSearchState() {
   state.results = [];
   state.selected = [];
-  exportStatus.textContent = "";
+  setExportStatus("");
   renderResults();
   renderSelected();
 }
@@ -522,7 +571,7 @@ async function checkAuthState() {
 
 safeOn(closeSignInBtn, "click", () => {
   closeSignInModal();
-  dirStatus.textContent = "Sign-in cancelled.";
+  dirStatus.textContent = "Sign-in was cancelled.";
 });
 
 safeOn(signOutBtn, "click", async () => {
@@ -574,11 +623,16 @@ async function applyDirectory(directory) {
     return;
   }
 
+  const isFile = j.directory && j.directory.toLowerCase().endsWith(".pptx");
   const displayDir = j.display_name
-    ? `Teams: ${j.display_name}`
-    : (j.directory ? `Directory set: ${j.directory}` : "No directory selected.");
+    ? `Teams folder: ${j.display_name}`
+    : j.directory
+      ? (isFile ? `Searching in file: ${j.directory}` : `Searching in folder: ${j.directory}`)
+      : "No folder or file selected yet.";
   dirInput.value = j.display_name ? target : (j.directory || "");
   state.lastAppliedDirectory = j.directory || "";
+  state.lastAppliedInput = dirInput.value;
+  updateSetBtnState();
   dirStatus.textContent = displayDir;
   resetSearchState();
   startIndexPolling(j.indexing || { status: "idle" });
@@ -597,7 +651,9 @@ safeOn(browseBtn, "click", async () => {
     if (!j.ok) throw new Error(j.error || "Browse failed");
     dirInput.value = j.directory || "";
     state.lastAppliedDirectory = j.directory || "";
-    dirStatus.textContent = j.directory ? `Directory set: ${j.directory}` : "No directory selected.";
+    state.lastAppliedInput = dirInput.value;
+    updateSetBtnState();
+    dirStatus.textContent = j.directory ? `Searching in folder: ${j.directory}` : "No folder or file selected yet.";
     resetSearchState();
     startIndexPolling(j.indexing || { status: "idle" });
   } catch (e) {
@@ -605,12 +661,35 @@ safeOn(browseBtn, "click", async () => {
   }
 });
 
-if (dirInput) dirInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    e.preventDefault();
-    applyDirectory(dirInput.value);
+safeOn(browseFileBtn, "click", async () => {
+  try {
+    const j = await getJSON("/api/browse_file");
+    if (!j.ok) throw new Error(j.error || "File browse failed");
+    dirInput.value = j.directory || "";
+    state.lastAppliedDirectory = j.directory || "";
+    state.lastAppliedInput = dirInput.value;
+    updateSetBtnState();
+    dirStatus.textContent = j.directory ? `Searching in file: ${j.directory}` : "No folder or file selected yet.";
+    resetSearchState();
+    startIndexPolling(j.indexing || { status: "idle" });
+  } catch (e) {
+    dirStatus.textContent = `Error: ${e.message}`;
   }
 });
+
+safeOn(setDirBtn, "click", () => {
+  applyDirectory(dirInput.value);
+});
+
+if (dirInput) {
+  dirInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      applyDirectory(dirInput.value);
+    }
+  });
+  dirInput.addEventListener("input", updateSetBtnState);
+}
 
 
 safeOn(clearResultsBtn, "click", () => {
@@ -620,7 +699,9 @@ safeOn(clearResultsBtn, "click", () => {
 
 safeOn(clearDeckBtn, "click", () => {
   state.selected = [];
+  state.pendingNewDeckPath = "";
   exportStatus.textContent = "";
+  closeNewDeckModal();
   renderSelected();
   renderResults();
 });
@@ -636,6 +717,11 @@ function syncSettingsUI() {
   const teamsMode = state.preferences.teams_indexing_mode || "download";
   teamsIndexingModeInputs.forEach((input) => {
     input.checked = input.value === teamsMode;
+  });
+
+  const newDeckMode = state.preferences.new_deck_mode || "ask";
+  newDeckModeInputs.forEach((input) => {
+    input.checked = input.value === newDeckMode;
   });
 
   if (settingsError) settingsError.textContent = "";
@@ -669,8 +755,9 @@ if (settingsModal) settingsModal.addEventListener("click", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !settingsModal.classList.contains("hidden")) {
-    closeSettingsModal();
+  if (e.key === "Escape") {
+    if (settingsModal && !settingsModal.classList.contains("hidden")) closeSettingsModal();
+    if (newDeckModal && !newDeckModal.classList.contains("hidden")) closeNewDeckModal();
   }
 });
 
@@ -684,6 +771,12 @@ exportModeInputs.forEach((input) => {
 teamsIndexingModeInputs.forEach((input) => {
   input.addEventListener("change", () => {
     state.preferences.teams_indexing_mode = input.value;
+  });
+});
+
+newDeckModeInputs.forEach((input) => {
+  input.addEventListener("change", () => {
+    state.preferences.new_deck_mode = input.value;
   });
 });
 
@@ -702,7 +795,9 @@ safeOn(resetDatabaseBtn, "click", async () => {
     if (j.ok) {
       dirInput.value = "";
       state.lastAppliedDirectory = "";
-      dirStatus.textContent = "Database reset. Select a folder to start indexing.";
+      state.lastAppliedInput = "";
+      updateSetBtnState();
+      dirStatus.textContent = "All data cleared. Select a folder or file to get started.";
       resetSearchState();
       updateIndexingUI({ status: "idle" });
       closeSettingsModal();
@@ -729,10 +824,12 @@ safeOn(browseExportDirBtn, "click", async () => {
 safeOn(saveSettingsBtn, "click", async () => {
   const selectedMode = exportModeInputs.find((input) => input.checked)?.value || "ask";
   const selectedTeamsMode = teamsIndexingModeInputs.find((input) => input.checked)?.value || "download";
+  const selectedNewDeckMode = newDeckModeInputs.find((input) => input.checked)?.value || "ask";
   const payload = {
     export_mode: selectedMode,
     export_directory: exportDirectoryInput.value || "",
     teams_indexing_mode: selectedTeamsMode,
+    new_deck_mode: selectedNewDeckMode,
   };
 
   try {
@@ -749,11 +846,29 @@ safeOn(saveSettingsBtn, "click", async () => {
   }
 });
 
+function openNewDeckModal(savedPath, filename) {
+  state.pendingNewDeckPath = savedPath;
+  if (newDeckModalSub) newDeckModalSub.textContent = filename;
+  if (newDeckModalMsg) newDeckModalMsg.textContent = `"${filename}" has been saved to your computer.`;
+  if (newDeckModal) {
+    newDeckModal.classList.remove("hidden");
+    newDeckModal.setAttribute("aria-hidden", "false");
+  }
+}
+
+function closeNewDeckModal() {
+  if (newDeckModal) {
+    newDeckModal.classList.add("hidden");
+    newDeckModal.setAttribute("aria-hidden", "true");
+  }
+  state.pendingNewDeckPath = "";
+}
+
 safeOn(exportDeckBtn, "click", async () => {
   if (!state.selected.length) return;
 
   exportDeckBtn.disabled = true;
-  exportStatus.textContent = "Building deck...";
+  setExportStatus("Creating your presentation…", true);
 
   try {
     let targetDirectory = "";
@@ -770,29 +885,82 @@ safeOn(exportDeckBtn, "click", async () => {
     });
 
     if (j.saved_path) {
-      exportStatus.textContent = `Export saved to: ${j.saved_path}`;
+      setExportStatus(`Saved to: ${j.saved_path}`);
+      const mode = state.preferences.new_deck_mode || "ask";
+      if (mode === "auto") {
+        setExportStatus("Saved! Switching search to new presentation…", true);
+        await applyDirectory(j.saved_path);
+        setExportStatus(`Now searching: ${j.filename}`);
+      } else if (mode === "ask") {
+        openNewDeckModal(j.saved_path, j.filename);
+      }
+      // "never" — do nothing extra
     } else if (j.download_url) {
-      exportStatus.textContent = `Export ready: ${j.filename}`;
+      setExportStatus(`Ready to download: ${j.filename}`);
       window.location.href = j.download_url;
     } else {
-      exportStatus.textContent = "Export completed.";
+      setExportStatus("Your presentation is ready!");
     }
   } catch (e) {
-    exportStatus.textContent = `Export failed: ${e.message}`;
+    setExportStatus(`Export failed: ${e.message}`);
   } finally {
     exportDeckBtn.disabled = false;
   }
 });
+
+safeOn(newDeckYesBtn, "click", async () => {
+  const path = state.pendingNewDeckPath;
+  closeNewDeckModal();
+  if (path) {
+    setExportStatus("Switching to new presentation…", true);
+    await applyDirectory(path);
+    setExportStatus("");
+  }
+});
+
+safeOn(newDeckNoBtn, "click", () => {
+  closeNewDeckModal();
+});
+
+if (newDeckModal) {
+  newDeckModal.addEventListener("click", (e) => {
+    if (e.target === newDeckModal) closeNewDeckModal();
+  });
+}
+
+function addThinkingMsg() {
+  const row = document.createElement("div");
+  row.className = "msg assistant";
+  row.id = "thinkingBubble";
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  const dots = document.createElement("div");
+  dots.className = "thinking-dots";
+  dots.innerHTML = "<span></span><span></span><span></span>";
+  bubble.appendChild(dots);
+  row.appendChild(bubble);
+  chatLog.appendChild(row);
+  chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function removeThinkingMsg() {
+  const el = document.getElementById("thinkingBubble");
+  if (el) el.remove();
+}
 
 async function send() {
   const msg = (chatInput.value || "").trim();
   if (!msg) return;
 
   chatInput.value = "";
+  sendBtn.disabled = true;
+  chatInput.disabled = true;
   addMsg("user", msg);
+  addThinkingMsg();
 
   try {
     const j = await postJSON("/api/chat", { message: msg });
+    removeThinkingMsg();
 
     if (j.mode === "search") {
       addMsg("assistant", j.text || "Search complete.");
@@ -802,7 +970,12 @@ async function send() {
       addMsg("assistant", j.text || "OK.");
     }
   } catch (e) {
+    removeThinkingMsg();
     addMsg("assistant", `Error: ${e.message}`);
+  } finally {
+    sendBtn.disabled = false;
+    chatInput.disabled = false;
+    chatInput.focus();
   }
 }
 

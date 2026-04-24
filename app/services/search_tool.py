@@ -90,26 +90,36 @@ def make_search_tool(settings: Settings):
             return SearchResponse(query=q, directory="", matches=[], error="directory_not_set").model_dump()
 
         teams_source = is_sharepoint_source(dir_)
+        # Single-file mode: a .pptx file path submitted directly (indexed via index_file).
+        # index_file stores source_root = str(file_path), so Chroma can filter by it directly.
+        single_file = (
+            not teams_source
+            and dir_.lower().endswith(".pptx")
+            and os.path.isfile(dir_)
+        )
 
-        if not teams_source and not os.path.isdir(dir_):
+        if not teams_source and not single_file and not os.path.isdir(dir_):
             logger.info("[TOOL] search_pptx_library directory not found: %s", dir_)
             return SearchResponse(query=q, directory=dir_, matches=[], error="directory_not_found").model_dump()
+
+        # Determine Chroma source_root filter:
+        # - Teams and single-file: filter by exact source_root key
+        # - Local directory: search globally and filter hits by path below
+        chroma_source_root = dir_ if (teams_source or single_file) else None
 
         try:
             from app.services.semantic_retriever import semantic_slide_search
 
-            # For Teams sources pass source_root so Chroma filters at query time;
-            # for local sources search globally and filter by path below.
             hits = semantic_slide_search(
                 query=q,
                 top_k=candidate_k,
-                source_root=dir_ if teams_source else None,
+                source_root=chroma_source_root,
             )
         except Exception as e:
             logger.exception("[TOOL] search_pptx_library failed during semantic search")
             return SearchResponse(query=q, directory=dir_, matches=[], error=f"semantic_search_failed: {e}").model_dump()
 
-        if not teams_source:
+        if not teams_source and not single_file:
             hits = [hit for hit in hits if isinstance(hit.get("path"), str) and is_under(hit["path"], dir_)]
         hits = filter_hits_dynamically(
             hits=hits,

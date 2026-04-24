@@ -58,7 +58,7 @@ def index_root(root: str | Path, cfg: KBConfig, progress_callback: ProgressCallb
         percent=0,
         current_file="",
         stats=stats.copy(),
-        message="Scanning directory for PowerPoint files...",
+        message="Looking for presentations…",
     )
 
     existing_entries = store.get_source_entries(normalized_root)
@@ -78,7 +78,7 @@ def index_root(root: str | Path, cfg: KBConfig, progress_callback: ProgressCallb
             percent=percent,
             current_file=current_file,
             stats=stats.copy(),
-            message=f"Indexing {path.name} ({index}/{total})",
+            message=f"Reading {path.name} ({index} of {total})",
         )
 
         try:
@@ -131,6 +131,100 @@ def index_root(root: str | Path, cfg: KBConfig, progress_callback: ProgressCallb
         percent=100,
         current_file="",
         stats=stats.copy(),
-        message="Indexing completed.",
+        message="Done!",
     )
     return {"ok": True, "stats": stats, "root": normalized_root}
+
+
+def index_file(file_path: str | Path, cfg: KBConfig, progress_callback: ProgressCallback | None = None) -> Dict[str, Any]:
+    """Index a single PPTX file."""
+    store = ChromaSlideStore(cfg)
+    path = Path(file_path).expanduser().resolve()
+    source_root = str(path)
+
+    stats = {
+        "indexed_files": 0,
+        "indexed_slides": 0,
+        "skipped_files": 0,
+        "deleted_files": 0,
+        "total_files": 1,
+    }
+
+    _emit(
+        progress_callback,
+        stage="scanning",
+        status="running",
+        current=0,
+        total=1,
+        percent=0,
+        current_file=str(path),
+        stats=stats.copy(),
+        message=f"Reading {path.name}…",
+    )
+
+    existing_entries = store.get_source_entries(source_root)
+    existing_by_uid = {entry["doc_uid"]: entry for entry in existing_entries if entry.get("doc_uid")}
+    current_uids: set[str] = set()
+
+    doc_uid = _doc_uid(path)
+    doc_signature = _doc_signature(path)
+    current_uids.add(doc_uid)
+
+    _emit(
+        progress_callback,
+        stage="indexing",
+        status="running",
+        current=1,
+        total=1,
+        percent=50,
+        current_file=str(path),
+        stats=stats.copy(),
+        message=f"Reading {path.name}…",
+    )
+
+    try:
+        existing = existing_by_uid.get(doc_uid)
+        if existing and existing.get("doc_signature") == doc_signature:
+            stats["skipped_files"] += 1
+        else:
+            if existing and existing.get("ids"):
+                store.delete_ids(existing["ids"])
+
+            doc_hash = sha256_file(path)
+            slides = extract_slides(
+                pptx_path=path,
+                doc_hash=doc_hash,
+                source_root=source_root,
+                doc_uid=doc_uid,
+                doc_signature=doc_signature,
+            )
+            if slides:
+                ids = [slide.slide_id for slide in slides]
+                texts = [slide.text for slide in slides]
+                metas = [slide.metadata for slide in slides]
+                store.upsert_slides(ids, texts, metas)
+                stats["indexed_files"] += 1
+                stats["indexed_slides"] += len(slides)
+            else:
+                stats["skipped_files"] += 1
+    except Exception:
+        stats["skipped_files"] += 1
+
+    stale_entries = [entry for entry in existing_entries if entry.get("doc_uid") not in current_uids]
+    stale_ids = [slide_id for entry in stale_entries for slide_id in entry.get("ids", [])]
+    if stale_ids:
+        store.delete_ids(stale_ids)
+        stats["deleted_files"] = len(stale_entries)
+
+    _emit(
+        progress_callback,
+        stage="done",
+        status="completed",
+        current=1,
+        total=1,
+        percent=100,
+        current_file="",
+        stats=stats.copy(),
+        message="Done!",
+    )
+    return {"ok": True, "stats": stats, "root": source_root}

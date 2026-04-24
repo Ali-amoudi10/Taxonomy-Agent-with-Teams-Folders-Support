@@ -31,13 +31,13 @@
 
     <section class="card dir-card">
       <div class="dir-row">
-        <label for="dirInput">Directory</label>
+        <label for="dirInput">Search in</label>
 
         <div class="dir-input-wrap">
           <input
             id="dirInput"
             type="text"
-            placeholder="Local folder path or Teams folder link (https://…sharepoint.com/…)"
+            placeholder="Folder path, PowerPoint file (.pptx), or Teams link (https://…sharepoint.com/…)"
             autocomplete="off"
           />
         </div>
@@ -47,14 +47,31 @@
             id="browseBtn"
             class="btn btn-secondary"
             type="button"
-            title="Opens a native folder picker and sets the directory automatically"
+            title="Open a folder to search all presentations inside it"
           >
-            Browse
+            Browse Folder
+          </button>
+          <button
+            id="browseFileBtn"
+            class="btn btn-secondary"
+            type="button"
+            title="Open a single PowerPoint file to search within"
+          >
+            Browse File
+          </button>
+          <button
+            id="setDirBtn"
+            class="btn btn-primary"
+            type="button"
+            title="Apply the path or link typed above"
+            disabled
+          >
+            Set
           </button>
         </div>
       </div>
 
-      <div id="dirStatus" class="muted dir-status">No directory selected.</div>
+      <div id="dirStatus" class="muted dir-status">No folder or file selected yet.</div>
     </section>
 
     <div class="main-grid-wrap">
@@ -85,13 +102,13 @@
 
           <div id="indexingWrap" class="indexing-wrap hidden" aria-live="polite">
             <div class="indexing-head">
-              <span id="indexingLabel" class="indexing-label">Indexing directory…</span>
+              <span id="indexingLabel" class="indexing-label">Reading your presentations…</span>
               <span id="indexingPercent" class="muted small">0%</span>
             </div>
             <div class="progress-track">
               <div id="indexingBar" class="progress-bar"></div>
             </div>
-            <div id="indexingDetails" class="muted small indexing-details">Preparing indexing…</div>
+            <div id="indexingDetails" class="muted small indexing-details">Getting ready…</div>
           </div>
         </section>
 
@@ -106,7 +123,7 @@
 
           <div id="resultsList" class="result-list">
             <div class="empty-state">
-              Run a search from the chat and the suggested slides will appear here.
+              Describe what you're looking for in the chat — matching slides will appear here.
             </div>
           </div>
         </section>
@@ -128,7 +145,7 @@
 
           <div id="selectedList" class="selected-list">
             <div class="empty-state">
-              Add slides from the middle panel to build an export deck.
+              Click Add on any suggested slide to include it in your presentation.
             </div>
           </div>
 
@@ -199,6 +216,34 @@
 
         <hr class="settings-divider" />
 
+        <div class="settings-section-title">After Exporting a New Presentation</div>
+
+        <label class="radio-option">
+          <input type="radio" name="newDeckMode" value="ask" checked />
+          <div>
+            <div class="radio-title">Ask me each time</div>
+            <div class="muted small">A prompt appears after each export asking whether to switch your search to the new file.</div>
+          </div>
+        </label>
+
+        <label class="radio-option">
+          <input type="radio" name="newDeckMode" value="auto" />
+          <div>
+            <div class="radio-title">Switch automatically</div>
+            <div class="muted small">Your search focus switches to the newly exported presentation without any prompt.</div>
+          </div>
+        </label>
+
+        <label class="radio-option">
+          <input type="radio" name="newDeckMode" value="never" />
+          <div>
+            <div class="radio-title">Stay on current source</div>
+            <div class="muted small">Your current folder or file always remains the search focus — exports never change it.</div>
+          </div>
+        </label>
+
+        <hr class="settings-divider" />
+
         <div class="settings-danger-zone">
           <div>
             <div class="settings-section-title">Database</div>
@@ -233,6 +278,27 @@
     </div>
   </div>
 
+  <!-- New deck focus modal -->
+  <div id="newDeckModal" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-card card new-deck-modal-card">
+      <div class="modal-head">
+        <div>
+          <h2>Presentation Saved</h2>
+          <div id="newDeckModalSub" class="muted small"></div>
+        </div>
+      </div>
+      <div class="new-deck-modal-body">
+        <p id="newDeckModalMsg" class="new-deck-modal-msg"></p>
+        <p class="muted small new-deck-modal-question">Would you like to focus your search on this new file for the rest of your session?</p>
+      </div>
+      <div class="modal-actions new-deck-modal-actions">
+        <button id="newDeckNoBtn" class="btn btn-ghost" type="button">No, keep current source</button>
+        <button id="newDeckYesBtn" class="btn btn-primary" type="button">Yes, search this file</button>
+      </div>
+    </div>
+  </div>
+
+  <script>window.SCORE_DISPLAY_MAX = {{ score_display_max }};</script>
   <script src="/static/app.js?v={{ asset_version }}"></script>
 </body>
 </html>

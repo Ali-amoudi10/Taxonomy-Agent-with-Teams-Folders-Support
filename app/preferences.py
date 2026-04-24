@@ -11,6 +11,7 @@ DEFAULT_PREFERENCES: Dict[str, Any] = {
     "export_mode": "ask",           # ask | fixed
     "export_directory": "",
     "teams_indexing_mode": "download",  # download | com
+    "new_deck_mode": "ask",         # ask | auto | never
 }
 
 
@@ -27,6 +28,10 @@ def _normalize(prefs: Dict[str, Any] | None) -> Dict[str, Any]:
     if teams_mode not in {"download", "com"}:
         teams_mode = "download"
     data["teams_indexing_mode"] = teams_mode
+    new_deck_mode = str(data.get("new_deck_mode") or "ask").strip().lower()
+    if new_deck_mode not in {"ask", "auto", "never"}:
+        new_deck_mode = "ask"
+    data["new_deck_mode"] = new_deck_mode
     return data
 
 

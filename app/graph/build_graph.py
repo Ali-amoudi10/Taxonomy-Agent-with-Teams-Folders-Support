@@ -95,6 +95,14 @@ def _strip_tool_messages_for_ui(messages: List[BaseMessage]) -> List[Dict[str, A
 logger = get_logger("taxonomy_agent.graph")
 
 
+def _tool_already_called(messages: List[BaseMessage]) -> bool:
+    """True if a ToolMessage exists after the most recent HumanMessage."""
+    for i in range(len(messages) - 1, -1, -1):
+        if isinstance(messages[i], HumanMessage):
+            return any(isinstance(m, ToolMessage) for m in messages[i + 1:])
+    return False
+
+
 def build_graph(settings: Settings):
     llm = get_chat_model()
 
@@ -105,12 +113,27 @@ def build_graph(settings: Settings):
     def agent_node(state: State) -> Dict[str, Any]:
         directory = (state.get("directory") or "").strip()
 
+        if directory:
+            if directory.lower().endswith(".pptx"):
+                source_ctx = f"Current source: single presentation file — {directory}"
+            elif directory.startswith("sharepoint::"):
+                source_ctx = f"Current source: Teams/SharePoint folder — {directory}"
+            else:
+                source_ctx = f"Current source: local folder — {directory}"
+        else:
+            source_ctx = "Current source: (not set)"
+
         sys = SystemMessage(
-            content=f"{SYSTEM_PROMPT}\n\nCurrent directory: {directory or '(not set)'}"
+            content=f"{SYSTEM_PROMPT}\n\n{source_ctx}"
         )
 
         msgs = list(state.get("messages") or [])
-        ai = llm_with_tools.invoke([sys] + msgs)
+
+        # After the tool has run once for this user turn, remove tool-calling
+        # capability so the model is forced to produce a final answer and cannot
+        # re-enter the tool loop on its own.
+        active_llm = llm if _tool_already_called(msgs) else llm_with_tools
+        ai = active_llm.invoke([sys] + msgs)
 
         tool_calls = getattr(ai, "tool_calls", None) or []
         if tool_calls:
