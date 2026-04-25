@@ -1,15 +1,11 @@
 PLEASE READ EVERYTHING IN THIS FILE
 
 Steps to install the required dependencies (libraries and packages):
-1. First you need to install python on your device.
-    To do this you can go to Microsoft Store app and type "Python" in the search bar.
-    The search result will show several Python versions. Download the one that says Python 3.13
-2. Double click on run_toxonomy_agent.bat
-    If this is the first time you are running this application, it might take some time to insatll the requirements.
-    Once the requirements are installed it may show a configuration window. You should see three options on the top of the window. Press on "Import .env file".
-    Another pop up window will apear to choose a file.
-    Go to the directory of this folder and choose the file ".env" then press "Save and Launch".
-    This setup will happen only the first time you run the app.
+1. Double click on run_taxonomy_agent.bat. If python is not installed on your system, it will download it and install it. Once python is installed, it will ask you to close the current window. Close the current window by pressing any key or closing it regularly.
+2. Double click on rub_taxonomy_agent.bat again. Now it will create a new environment and install the required dependencies. It might take some time so you should wait until it finishes. If this step is not successful or is stopped before it successfully finishes, you will have to delete .venv file manually and start this step again.
+3. Once the two previouse steps are successful, the agent should start in a browser and you should be able to use it.
+
+The first two steps will happen only once. From now on, you should be able to run the agent by double clicking in run_taxonomy_agent.bat
 
 Steps to run and use the app:
 1. Double click on run_toxonomy_agent.bat (If this is the first time then refer to previouse section "Steps to install the required dependencies")

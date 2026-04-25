@@ -5,8 +5,8 @@ cd /d "%~dp0"
 set "PY_EXE="
 if exist ".venv\Scripts\python.exe" goto USE_VENV
 
-py -3.11 -V >nul 2>&1
-if not errorlevel 1 set "PY_EXE=py -3.11"
+py -3.13 -V >nul 2>&1
+if not errorlevel 1 set "PY_EXE=py -3.13"
 
 if not defined PY_EXE (
     python --version >nul 2>&1
@@ -21,8 +21,8 @@ if not defined PY_EXE (
         exit /b 1
     )
 
-    echo Python 3.11 not found. Installing it with winget...
-    winget install -e --id Python.Python.3.11 ^
+    echo Python 3.13 not found. Installing it with winget...
+    winget install -e --id Python.Python.3.13 ^
         --accept-package-agreements ^
         --accept-source-agreements ^
         --log "%TEMP%\taxonomyagent_python_install.log"
@@ -34,8 +34,8 @@ if not defined PY_EXE (
     )
 
     rem Re-detect Python after install
-    py -3.11 -V >nul 2>&1
-    if not errorlevel 1 set "PY_EXE=py -3.11"
+    py -3.13 -V >nul 2>&1
+    if not errorlevel 1 set "PY_EXE=py -3.13"
 
     if not defined PY_EXE (
         python --version >nul 2>&1

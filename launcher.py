@@ -107,17 +107,28 @@ def _wait_for_health(url: str, timeout_seconds: int) -> bool:
 
 
 def _serve(host: str, port: int) -> None:
-    import uvicorn
-    from app.ui.server import app
+    try:
+        import uvicorn
+        from app.ui.server import app
 
-    logger.info("[SERVER] starting on %s:%s", host, port)
-    uvicorn.run(app, host=host, port=port, reload=False, log_level="warning", access_log=False)
+        logger.info("[SERVER] starting on %s:%s", host, port)
+        uvicorn.run(app, host=host, port=port, reload=False, log_level="warning", access_log=False)
+    except Exception as e:
+        logger.error("[SERVER] failed to start server: %s", e)
+        raise
 
 
 def main() -> None:
     logger.info("[APP] launch requested")
     logger.info("[APP] log file: %s", log_file_path())
     _load_env()
+
+    # Disable OpenTelemetry to prevent import issues during shutdown
+    os.environ["OTEL_SDK_DISABLED"] = "true"
+
+    # Fix SSL_CERT_FILE if it points to a non-existent file
+    if "SSL_CERT_FILE" in os.environ and not os.path.exists(os.environ["SSL_CERT_FILE"]):
+        del os.environ["SSL_CERT_FILE"]
 
     args = {arg.strip().lower() for arg in sys.argv[1:]}
     force_config = "--configure" in args or "--configure-only" in args

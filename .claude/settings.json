@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(python -c \"import msal\")",
-      "Bash(python -c ' *)",
-      "WebSearch"
-    ]
-  }
-}
